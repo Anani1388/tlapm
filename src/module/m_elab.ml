@@ -225,10 +225,13 @@ let lambdify_expr cx expr =
     let lambdify_enabled = true in
     let lambdify_cdot = true in
     let autouse = true in
+    let used_identifiers = Expr.Visit.collect_identifiers
+        cx expr in
     let expr = Expr.Action.lambdify cx expr
             ~lambdify_enabled:lambdify_enabled
             ~lambdify_cdot:lambdify_cdot
-            ~autouse:autouse in
+            ~autouse:autouse
+            ~used_identifiers:used_identifiers in
         expr
 
 
@@ -790,10 +793,10 @@ procedure map_obvious_proof(proof, mapping, cx) {
     } ;
     (* This annotation is used later, when processing each
     proof obligation, to decide whether a step that uses
-    `ENABLEDaxioms` depends on a fact of too high level,
+    `ENABLEDrules` depends on a fact of too high level,
     and fail with a suitable message.
     *)
-    if (HasENABLEDaxioms(cx) /\ (max_level > 1)) {
+    if (HasENABLEDrules(cx) /\ (max_level > 1)) {
         proof := Annotate(proof, enabledaxioms_property, FALSE)
     } else {
         proof := Annotate(proof, enabledaxioms_property, TRUE)
@@ -892,7 +895,6 @@ let check_enabled_axioms_map = object (self: 'self)
             let use = Use (usables_, only) @@ st in
             (scx, use)
         | Use (usables, only) ->
-            print_string "USE usables with ";
             Util.eprintf ~at:st "%s"
                 ("USE usables with number of facts: " ^
                 (string_of_int (List.length usables.facts)) ^
@@ -906,12 +908,10 @@ let check_enabled_axioms_map = object (self: 'self)
                 | Sequent sq -> sq
                 | _ -> assert false
                 in
-            let proof_level = ref 0 (* !level *) in
+            let proof_level = ref 0 in
             let prf =
                 let level_hyps = hyps_level sq.context in
                 (* store (assumption) level of sequent context *)
-                print_string "Step Number: ";
-                print_string stepnm;
                 let sm = StringMap.add stepnm (st, cx, level_hyps) sm in
                 let scx = ((proof_level, sm), cx) in
                 (* context changes *)
@@ -1026,12 +1026,9 @@ let check_enabled_axioms_map = object (self: 'self)
                     print_string name.core;
                     *)
                     let nm = name.core in
-                    print_string "Defn: ";
-                    print_string nm;
                     (* is this a step number ? *)
                     if (String.contains_from nm 0 '<') then begin
                         if (StringMap.mem nm sm) then begin
-                            print_string ("Found stored step: " ^ nm ^ "\n");
                             let (step, cx, step_level) =
                                     StringMap.find nm sm in
                             max_level := max step_level !max_level
@@ -1044,8 +1041,6 @@ let check_enabled_axioms_map = object (self: 'self)
                 (* hidden defined operators, which may be used as symbols
                 in assumptions *)
                 | Defn ({core=Operator (name, e)}, _, Hidden, _) ->
-                    let nm = name.core in
-                    print_string nm;
                     let e = Expr.Levels.compute_level cx_ e in
                     let expr_level = Expr.Levels.get_level e in
                     max_level := max expr_level !max_level
@@ -1082,18 +1077,18 @@ let check_enabled_axioms_map = object (self: 'self)
             (* theorems, expressions from assumptions *)
             | Fact (expr, Visible, _) ->
                 let cx_ = Expr.T.cx_front cx ((Deque.size cx) - n) in
-
+                (*
                 print_string "Fact:\n";
                 print_string (Expr.Fmt.string_of_expr cx_ expr);
                 print_string "\n";
-
+                *)
                 check_fact cx_ expr
             | _ -> ()
             in
         Deque.iter check_assumptions cx;
         level := !max_level;
 
-        (* search for proof directive `ENABLEDaxioms` in the context *)
+        (* search for proof directive `ENABLEDrules` in the context *)
         let found = ref false in
         let find_proof_directive n hyp =
             match hyp.core with
@@ -1104,8 +1099,8 @@ let check_enabled_axioms_map = object (self: 'self)
                     let hyp = E_t.get_val_from_id cx_ n in
                     match hyp.core with
                     | Defn ({core=Bpragma (name, _, _)}, _, _, _) ->
-                        if (name.core = "ENABLEDaxioms") then
-                            found := !found
+                        if (name.core = "ENABLEDrules") then
+                            found := true
                     | _ -> ()
                     end
                 | _ -> ()
@@ -1113,14 +1108,14 @@ let check_enabled_axioms_map = object (self: 'self)
             | _ -> ()
             in
         Deque.iter find_proof_directive cx;
-
+        (*
         if !found then
-            print_string "Found ENABLEDaxioms\n";
-
+            print_string "Found ENABLEDrules\n";
+        *)
         if (!found && (!max_level > 1)) then
             begin
             Util.eprintf ~at:pf "%s"
-                ("ENABLEDaxioms depends on assumption of expression " ^
+                ("ENABLEDrules depends on assumption of expression " ^
                 "level > 1");
             (*
             Util.eprintf "%a@" (Proof.Fmt.pp_print_proof (cx, Ctx.dot)) pf
@@ -1226,7 +1221,7 @@ let check_enabled_axioms_usage = object (self: 'self)
                     let hyp = E_t.get_val_from_id cx_ n in
                     match hyp.core with
                     | Defn ({core=Bpragma (name, _, _)}, _, _, _) ->
-                        found := !found || (name.core = "ENABLEDaxioms")
+                        found := !found || (name.core = "ENABLEDrules")
                     | _ -> ()
                     end
                 | _ -> ()

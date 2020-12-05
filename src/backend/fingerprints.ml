@@ -578,7 +578,16 @@ let fp_sequent sq =
 
 
 let fingerprint ob =
- to_string (fp_sequent ob.Proof.T.obl.core)
+    let enabledrules = if Expr.T.has_enabledaxioms ob.obl then
+        begin if Expr.T.get_enabledaxioms ob.obl then
+            "Level<=1"
+        else
+            "Level>1"
+        end else "" in
+    let buf = fp_sequent ob.Proof.T.obl.core in
+    bprintf buf "%s" enabledrules;
+    (* Buffer.output_buffer stdout buf; *)
+    to_string buf
 
 (* adds its fingerprint to an obligation *)
 let write_fingerprint ob =

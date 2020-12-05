@@ -561,6 +561,60 @@ let collect_primed_vars cx e =
     set_to_list primed_vars
 
 
+let collect_identifiers cx e =
+    (* Return a `string list` of all declared and
+    defined identifiers in the context `cx` and the expression `e`.
+    *)
+    let identifiers = Hashtbl.create 16 in
+    let add_id v = Hashtbl.replace identifiers v.core () in
+    let add_ids vs = List.iter add_id vs in
+    let visitor =
+        object (self: 'self)
+        inherit [unit] iter as super
+
+        method expr scx oe =
+            let vs = match oe.core with
+                | Lambda (vs, _) -> List.map (fun (v, _) -> v) vs
+                | Tquant (_, vs, _) -> vs
+                | Choose (v, _, _) -> [v]
+                | SetSt (v, _, _) -> [v]
+                | _ -> [] in
+            add_ids vs;
+            super#expr scx oe
+
+        method defn scx df =
+            let v = match df.core with
+                | Recursive (nm, _) -> nm
+                | Operator (nm, _) -> nm
+                | Bpragma (nm, _, _) -> nm
+                | Instance (nm, _) -> nm in
+            add_id v;
+            super#defn scx df
+
+        method bounds scx bs =
+            let vs = List.map (fun (v, _, _) -> v) bs in
+            add_ids vs;
+            super#bounds scx bs
+
+        method instance scx i =
+            assert false  (* called after `Module.Elab`
+                expands `INSTANCE` *)
+
+        method hyp scx h =
+            begin match h.core with
+            | Fresh (nm, _, _, _) -> add_id nm
+            | Flex nm -> add_id nm
+            | Defn _ -> ()  (* handled in the method `self#defn` *)
+            | Fact _ -> () end;
+            super#hyp scx h
+        end in
+    let scx = ((), Deque.empty) in
+    ignore (visitor#hyps scx cx);
+    let scx = ((), cx) in
+    visitor#expr scx e;
+    set_to_list identifiers
+
+
 class virtual ['s] map_rename = object (self : 'self)
   (* Rename hypotheses. The renaming of identifiers is implemented in the
   method `rename`.

@@ -480,7 +480,7 @@ let var_to_fresh
     for constants bound by quantifiers that are introduced for
     representing `\cdot`.
     *)
-    name ^ "#enabled#prime" ^ (string_of_int nesting)
+    name ^ "#" ^ (string_of_int nesting)
 
 
 let flex_to_fresh_opaque
@@ -774,21 +774,32 @@ let shift_indices_after_lambdify (e: expr): expr =
     visitor#expr s e
 
 
-let normalize_lambda_signature signature keep_same_names =
-    let n = List.length signature in
+let normalize_lambda_signature signature_ used_identifiers =
+    (*
+    let n = List.length signature_ in
     assert (n >= 1);
     let names = List.init n (fun i -> param_name ^ string_of_int i) in
-    let params = List.map (fun (p, _) -> p.core) signature in
+    *)
+    let mk_id name i = name ^ "_" ^ (string_of_int i) in
+    let map_id (p, _) =
+        let (name, depth) = match (String.split_on_char '#' p.core) with
+            | [name; depth] -> (name, depth)
+            | _ -> assert false in
+        let f i = List.mem (mk_id name i) used_identifiers in
+        let i = ref (int_of_string depth) in
+        while (f !i) do
+            i := !i + 1
+        done;
+        mk_id name !i in
+    let names = List.map map_id signature_ in
+    let params = List.map (fun (p, _) -> p.core) signature_ in
     let mk_parameter name flex_name =
         let h = noprops name in
         (* store name for inverse renaming *)
         let h = assign h variable_name flex_name in
         let shp = Shape_expr in
         (h, shp) in
-    if keep_same_names then
-        List.map2 mk_parameter params params
-    else
-        List.map2 mk_parameter names params
+    List.map2 mk_parameter names params
 
 
 class normalize_lambda_param_names =
@@ -805,10 +816,10 @@ class normalize_lambda_param_names =
     object (self: 'self)
     inherit [unit] Visit.map_visible_hyp as super
 
-    val mutable _keep_same_names: bool = true
+    val mutable _used_identifiers: string list = []
 
-    method config keep_same_names =
-        _keep_same_names <- keep_same_names
+    method config used_identifiers =
+        _used_identifiers <- used_identifiers
 
     method expr
             (((), (cx: T.ctx)) as scx)
@@ -821,7 +832,7 @@ class normalize_lambda_param_names =
             assert (fst.core <> temp_bound);
             let expr_ = self#expr scx expr in
             let signature = normalize_lambda_signature
-                signature _keep_same_names in
+                signature _used_identifiers in
             let lambda = Lambda (signature, expr_) in
             let expr_ = noprops lambda in
             (* without renaming, even without coalescing,
@@ -849,6 +860,7 @@ class lambdify_action_operators =
 
     val mutable _lambdify_enabled: bool = false
     val mutable _lambdify_cdot: bool = false
+    val mutable _used_identifiers: string list = []
 
     (* This class does not introduce quantifiers, it only binds occurrences
     of variables in the scope of primes within `ENABLED` and the first
@@ -943,10 +955,11 @@ class lambdify_action_operators =
             (e: expr)
             ~(lambdify_enabled: bool)
             ~(lambdify_cdot: bool)
-            ~(keep_same_names: bool):
+            ~(used_identifiers:string list):
                 expr =
         _lambdify_enabled <- lambdify_enabled;
         _lambdify_cdot <- lambdify_cdot;
+        _used_identifiers <- used_identifiers;
         let e_ =
             let scope = (None, None) in
             self#expr (scope, cx) e in
@@ -954,7 +967,7 @@ class lambdify_action_operators =
         let e_ = E_anon.anon#expr ([], cx) e_ in
         let e_ =
             let visitor = new normalize_lambda_param_names in
-            visitor#config keep_same_names;
+            visitor#config used_identifiers;
             visitor#expr ((), cx) e_ in
         e_
 
@@ -1412,8 +1425,9 @@ class expansion_of_action_operators =
 end
 
 
-let implication_to_enabled cx expr =
+let enabled_axioms cx expr =
     let expr = E_levels.compute_level cx expr in
+    (*
     let found = ref false in
     let found_a_type = ref false in
     let found_b_type = ref false in
@@ -1532,117 +1546,249 @@ let implication_to_enabled cx expr =
         print_string (E_fmt.string_of_expr cx3 b);
         *)
         in
+    *)
+
+    (* TODO: consider including equality (constructor `Eq`)
+    in addition to equivalence
+    *)
     let check_active cx_goal expr =
-        match expr.core with
-        | Apply ({core=Internal ENABLED}, [{core=
-                    Apply ({core=Internal Disj}, [a; b])
-                }]) ->
-            let a_level = E_levels.get_level a in
-            let b_level = E_levels.get_level b in
-            assert (a_level <= 2);
-            assert (b_level <= 2);
-            (Some a, Some b, "abdisj_inverse")
-        | Apply ({core=Internal Disj}, [
-                    {core=Apply ({core=Internal ENABLED}, [a])};
-                    {core=Apply ({core=Internal ENABLED}, [b])}
-                ]) ->
-            let a_level = E_levels.get_level a in
-            let b_level = E_levels.get_level b in
-            assert (a_level <= 2);
-            assert (b_level <= 2);
-            (Some a, Some b, "abdisj")
-        | Apply ({core=Internal ENABLED}, [{core=
-                    Apply ({core=Internal Conj}, [a; b])
-                }]) ->
-            let a_variables = E_visit.collect_primed_vars cx_goal a in
-            let b_variables = E_visit.collect_primed_vars cx_goal b in
-            let cap = List.filter
-                        (fun x -> List.mem x a_variables) b_variables in
-            let isempty = (List.length cap) = 0 in
-            let a_level = E_levels.get_level a in
-            let b_level = E_levels.get_level b in
-            assert (a_level <= 2);
-            assert (b_level <= 2);
-            if isempty then
-                begin
-                if (a_level = 2) then
-                    (Some a, Some b, "abconj_inverse")
-                else
-                    (Some a, Some b, "pconj_inverse")
-                end
-            else
-                begin
-                (None, None, " ")
-                end
-        | Apply ({core=Internal Conj}, [
-                    {core=Apply ({core=Internal ENABLED}, [a])};
-                    {core=Apply ({core=Internal ENABLED}, [b])}
-                ]) ->
-            let a_variables = E_visit.collect_primed_vars cx_goal a in
-            let b_variables = E_visit.collect_primed_vars cx_goal b in
-            let cap = List.filter
-                        (fun x -> List.mem x a_variables) b_variables in
-            let isempty = (List.length cap) = 0 in
-            if isempty then
-                begin
-                (Some a, Some b, "abconj")
-                end
-            else
-                begin
-                (None, None, " ")
-                end
-        | Apply ({core=Internal Conj}, [p; {core=
-                Apply ({core=Internal ENABLED}, [a])}]) ->
-            let p_level = E_levels.get_level p in
-            let a_level = E_levels.get_level a in
-            if (p_level <= 1) && (a_level <= 2) then
-                (Some p, Some a, "pconj")
-            else
-                (None, None, " ")
+        begin
+        let core = match expr.core with
+
+        (* ------------------------------------------------
+        ENABLED commutes with existential quantification
+
+            ENABLED (\E i \in S:  A(i)) <=> \E i \in S:  ENABLED A(i)
+        *)
         | Apply ({core=Internal Equiv}, [
-            {core=Apply ({core=Internal ENABLED}, [a])};
-            {core=Apply ({core=Internal ENABLED}, [b])}
-            ]) -> (Some a, Some b, "equiv")
-        | Apply ({core=Internal Implies}, [
-            {core=Apply ({core=Internal ENABLED}, [a])};
-            {core=Apply ({core=Internal ENABLED}, [b])}
-            ]) -> (Some a, Some b, "implies")
-        | Apply ({core=Internal Eq}, [
-            {core=Apply ({core=Internal ENABLED}, [a])};
-            {core=Apply ({core=Internal ENABLED}, [b])}
-            ]) -> (Some a, Some b, "equiv")
-        | _ -> (None, None, " ")
+            {core=Apply ({core=Internal ENABLED}, [
+                {core=Quant (
+                    Exists,
+                    [(nm_a, Constant, Domain dom_a)],
+                    {core=Apply (a, [{core=Ix 1}])})}
+                ])};
+            {core=Quant (
+                    Exists,
+                    [(nm_b, Constant, Domain dom_b)],
+                    {core=Apply ({core=Internal ENABLED},
+                        [{core=Apply (b, [{core=Ix 1}])}])})}
+            ])
+        (* (\E i \in S:  ENABLED A(i)) <=> ENABLED (\E i \in S:  A(i)) *)
+        | Apply ({core=Internal Equiv}, [
+            {core=Quant (
+                    Exists,
+                    [(nm_b, Constant, Domain dom_b)],
+                    {core=Apply ({core=Internal ENABLED},
+                        [{core=Apply (b, [{core=Ix 1}])}])})};
+            {core=Apply ({core=Internal ENABLED}, [
+                {core=Quant (
+                    Exists,
+                    [(nm_a, Constant, Domain dom_a)],
+                    {core=Apply (a, [{core=Ix 1}])})}
+                ])}
+            ]) when (
+                (E_eq.expr dom_a dom_b) &&
+                (E_eq.expr a b) &&
+                ((E_levels.get_level dom_a) <= 1)
+                )
+            ->
+                Internal TRUE
+
+        (* ------------------------------------------------
+        ENABLED distributes over disjunction
+
+            ENABLED (a \/ b) <=> (ENABLED a \/ ENABLED b)
+            ENABLED (a \/ b) <=> (ENABLED b \/ ENABLED a)
+        *)
+        | Apply ({core=Internal Equiv}, [
+            {core=Apply ({core=Internal ENABLED},
+                    [{core=Apply ({core=Internal Disj}, [a; b])}]
+                )};
+            {core=Apply ({core=Internal Disj}, [
+                    {core=Apply ({core=Internal ENABLED}, [c])};
+                    {core=Apply ({core=Internal ENABLED}, [d])}
+                ])}
+            ])
+        (* (ENABLED a \/ ENABLED b) <=> ENABLED (a \/ b)
+           (ENABLED b \/ ENABLED a) <=> ENABLED (a \/ b)
+        *)
+        | Apply ({core=Internal Equiv}, [
+            {core=Apply ({core=Internal Disj}, [
+                    {core=Apply ({core=Internal ENABLED}, [c])};
+                    {core=Apply ({core=Internal ENABLED}, [d])}
+                ])};
+            {core=Apply ({core=Internal ENABLED},
+                    [{core=Apply ({core=Internal Disj}, [a; b])}]
+                )}
+            ]) when (
+                ((E_eq.expr a c) && (E_eq.expr b d)) ||
+                ((E_eq.expr a d) && (E_eq.expr b c)) )
+            ->
+                let a_level = E_levels.get_level a in
+                let b_level = E_levels.get_level b in
+                assert (a_level <= 2);
+                assert (b_level <= 2);
+                Internal TRUE
+
+        (* ------------------------------------------------
+        ENABLED distributes over conjunction of actions
+        with disjoint sets of primed variables
+
+           ENABLED (a /\ b) <=> (ENABLED a /\ ENABLED b)
+           ENABLED (a /\ b) <=> (ENABLED b /\ ENABLED a)
+        *)
+        | Apply ({core=Internal Equiv}, [
+            {core=Apply ({core=Internal ENABLED},
+                    [{core=Apply ({core=Internal Conj}, [a; b])}]
+                )};
+            {core=Apply ({core=Internal Conj}, [
+                    {core=Apply ({core=Internal ENABLED}, [c])};
+                    {core=Apply ({core=Internal ENABLED}, [d])}
+                ])}
+            ])
+        (* (ENABLED a /\ ENABLED b) <=> ENABLED (a /\ b)
+           (ENABLED b /\ ENABLED a) <=> ENABLED (a /\ b)
+        *)
+        | Apply ({core=Internal Equiv}, [
+            {core=Apply ({core=Internal Conj}, [
+                    {core=Apply ({core=Internal ENABLED}, [c])};
+                    {core=Apply ({core=Internal ENABLED}, [d])}
+                ])};
+            {core=Apply ({core=Internal ENABLED},
+                    [{core=Apply ({core=Internal Conj}, [a; b])}]
+                )}
+            ]) when (
+                ((E_eq.expr a c) && (E_eq.expr b d)) ||
+                ((E_eq.expr a d) && (E_eq.expr b c)) )
+            ->
+                let a_variables = E_visit.collect_primed_vars cx_goal a in
+                let b_variables = E_visit.collect_primed_vars cx_goal b in
+                let cap = List.filter
+                    (fun x -> List.mem x a_variables) b_variables in
+                let isempty = (List.length cap) = 0 in
+                (* assert actions *)
+                let a_level = E_levels.get_level a in
+                let b_level = E_levels.get_level b in
+                assert (a_level <= 2);
+                assert (b_level <= 2);
+                if isempty then
+                    Internal TRUE
+                else
+                    expr.core
+
+        (* ------------------------------------------------
+        State predicates can be pulled outside ENABLED
+
+           ENABLED (a /\ b) <=> (a /\ ENABLED b)
+           ENABLED (b /\ a) <=> (a /\ ENABLED b)
+        *)
+        | Apply ({core=Internal Equiv}, [
+            {core=Apply ({core=Internal ENABLED},
+                    [{core=Apply ({core=Internal Conj}, [c; d])}]
+                )};
+            {core=Apply ({core=Internal Conj}, [
+                    a;
+                    {core=Apply ({core=Internal ENABLED}, [b])}
+                ])}
+            ])
+        (* (a /\ ENABLED b) <=> ENABLED (a /\ b)
+           (a /\ ENABLED b) <=> ENABLED (b /\ a)
+        *)
+        | Apply ({core=Internal Equiv}, [
+            {core=Apply ({core=Internal Conj}, [
+                    a;
+                    {core=Apply ({core=Internal ENABLED}, [b])}
+                ])};
+            {core=Apply ({core=Internal ENABLED},
+                    [{core=Apply ({core=Internal Conj}, [c; d])}]
+                )}
+            ]) when (
+                ((E_eq.expr a c) && (E_eq.expr b d)) ||
+                ((E_eq.expr a d) && (E_eq.expr b c)) )
+            ->
+                let a_level = E_levels.get_level a in
+                let b_level = E_levels.get_level b in
+                if (a_level <= 1) && (b_level <= 2) then
+                    Internal TRUE
+                else
+                    expr.core
+        | _ -> expr.core
         in
-    match expr.core with
-    | Sequent sq -> begin
-        let hyps = sq.context in
-        let active = sq.active in
+        core @@ expr
+        end in
+    let sq = match expr.core with
+        | Sequent sq -> sq
+        | _ -> assert false in
+    let (_, cx_goal) =
         let visitor = object (self: 'self)
             inherit [unit] E_visit.iter_visible_hyp
         end in
-        let (_, cx_goal) = visitor#hyps ((), cx) hyps in
-        let (a, b, rule) = check_active cx_goal active in
-        if a <> None then begin
-            check_context hyps a b rule
-        end;
-        let proved = !found && !found_a_type && !found_b_type in
-        begin if proved then
-            Util.printf ~at:expr ~prefix:"[INFO]" "%s"
-                ("\nProved " ^ rule ^ "\n")
-        else
-            failwith "ENABLEDaxioms proof directive did not succeed.\n" end;
-        let core = (if proved then Internal TRUE else expr.core) in
-        let active = noprops core in
-        let sq = {sq with active=active} in
-        noprops (Sequent sq)
-        end
-    | _ -> assert false
+        visitor#hyps ((), cx) sq.context in
+    let new_active = check_active cx_goal sq.active in
+    let sq = {sq with active=new_active} in
+    noprops (Sequent sq)
+
+    (*
+    begin if proved then
+        Util.printf ~at:expr ~prefix:"[INFO]" "%s"
+            ("\nProved " ^ rule ^ "\n")
+    else
+        failwith "ENABLEDaxioms proof directive did not succeed.\n" end;
+    *)
+
+
+let enabled_rules cx expr =
+    let expr = E_levels.compute_level cx expr in
+    (* TODO: consider including equality (constructor `Eq`)
+    in addition to equivalence
+    *)
+    let check_active cx_goal expr =
+        begin
+        let core = match expr.core with
+        (* Proof rule
+            A <=> B  |-  ENABLED A <=> ENABLED B
+        *)
+        | Apply ({core=Internal Equiv}, [
+            {core=Apply ({core=Internal ENABLED}, [a])};
+            {core=Apply ({core=Internal ENABLED}, [b])}
+            ])
+            ->
+                (* TODO: check ENABLEDaxioms property *)
+                Apply (noprops (Internal Equiv), [a; b])
+
+        (* Proof rule
+            A => B  |-  ENABLED A => ENABLED B
+        *)
+        | Apply ({core=Internal Implies}, [
+            {core=Apply ({core=Internal ENABLED}, [a])};
+            {core=Apply ({core=Internal ENABLED}, [b])}
+            ])
+            ->
+                (* TODO: check ENABLEDaxioms property *)
+                Apply (noprops (Internal Implies), [a; b])
+
+        | _ -> expr.core
+        in
+        core @@ expr
+        end in
+    let sq = match expr.core with
+        | Sequent sq -> sq
+        | _ -> assert false in
+    let (_, cx_goal) =
+        let visitor = object (self: 'self)
+            inherit [unit] E_visit.iter_visible_hyp
+        end in
+        visitor#hyps ((), cx) sq.context in
+    let new_active = check_active cx_goal sq.active in
+    let sq = {sq with active=new_active} in
+    noprops (Sequent sq)
 
 
 let lambdify cx e
         ~(lambdify_enabled:bool)
         ~(lambdify_cdot:bool)
-        ~(autouse:bool) =
+        ~(autouse:bool)
+        ~(used_identifiers:string list) =
     let e = E_levels.rm_expr_level cx e in
     let e = E_levels.compute_level cx e in
     let e = expand_definitions cx e
@@ -1653,7 +1799,7 @@ let lambdify cx e
     let e = visitor#expand cx e
         ~lambdify_enabled:lambdify_enabled
         ~lambdify_cdot:lambdify_cdot
-        ~keep_same_names:false in
+        ~used_identifiers:used_identifiers in
     let visitor = new check_arity in
     visitor#expr ((), cx) e;
     e
@@ -1676,7 +1822,8 @@ let expand_action_operators
         (e: expr)
         ~(expand_enabled: bool)
         ~(expand_cdot: bool)
-        ~(autouse: bool):
+        ~(autouse: bool)
+        ~(used_identifiers: string list):
             expr =
     assert (expand_enabled || expand_cdot);
     (* compute expression level information *)
@@ -1702,7 +1849,7 @@ let expand_action_operators
     let e_ = visitor#expand cx e_
         ~lambdify_enabled:expand_enabled
         ~lambdify_cdot:expand_cdot
-        ~keep_same_names:true in
+        ~used_identifiers:used_identifiers in
     let visitor = new replace_action_operators_with_quantifiers in
     let e_ = visitor#replace cx e_
         ~expand_enabled:expand_enabled

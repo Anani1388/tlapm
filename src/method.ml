@@ -40,6 +40,7 @@ type t =
   | AutoUSE
   | Lambdify
   | ENABLEDaxioms
+  | ENABLEDrules
   | LevelComparison
   | Trivial
 ;;
@@ -68,6 +69,7 @@ let timeout m =
   | AutoUSE -> infinity
   | Lambdify -> infinity
   | ENABLEDaxioms -> infinity
+  | ENABLEDrules -> infinity
   | LevelComparison -> infinity
   | Trivial -> infinity
 
@@ -101,6 +103,7 @@ let scale_time m s =
   | AutoUSE -> AutoUSE
   | Lambdify -> Lambdify
   | ENABLEDaxioms -> ENABLEDaxioms
+  | ENABLEDrules -> ENABLEDrules
   | LevelComparison -> LevelComparison
   | Trivial -> Trivial
 ;;
@@ -134,6 +137,7 @@ let pp_print_tactic ff m =
   | AutoUSE -> fprintf ff "(autouse)"
   | Lambdify -> fprintf ff "(lambdify)"
   | ENABLEDaxioms -> fprintf ff "(enabledaxioms)"
+  | ENABLEDrules -> fprintf ff "(enabledrules)"
   | LevelComparison -> fprintf ff "(levelcomparison)"
   | Trivial -> fprintf ff "(trivial)"
 ;;
@@ -167,6 +171,7 @@ let prover_meth_of_tac tac =
     | AutoUSE -> (Some "autouse", None)
     | Lambdify -> (Some "lambdify", None)
     | ENABLEDaxioms -> (Some "enabledaxioms", None)
+    | ENABLEDrules -> (Some "enabledrules", None)
     | LevelComparison -> (Some "levelcomparison", None)
     | Trivial -> (Some "trivial", None)
 

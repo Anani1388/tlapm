@@ -27,6 +27,7 @@ type t =
   | AutoUSE
   | Lambdify
   | ENABLEDaxioms
+  | ENABLEDrules
   | LevelComparison
   | Trivial
 ;;
