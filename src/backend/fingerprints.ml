@@ -568,6 +568,7 @@ let print_fp sq buf =
 
 let fp_sequent sq =
   let buf = Buffer.create 17 in
+  bprintf buf "v%d.%d.%d:" Version.major Version.minor Version.micro;
   fp_sequent (Stack.create 5 (No, ref false)) buf sq ;
   (* print_fp sq buf; *)
   buf
