@@ -27,7 +27,7 @@ THEOREM
 =====================================================
 command: ${TLAPM} --toolbox 0 0 ${FILE}
 stderr: All 4 obligations proved
-command: sed -i "" -e "19s/ASSUME x = 1/ASSUME x' = 1/" ENABLEDrules_fingerprint_levels_test.tla
+command: sed -e "19s/ASSUME x = 1/ASSUME x' = 1/" ${FILE} > temp && mv temp ${FILE}
 command: ${TLAPM} --toolbox 0 0 ${FILE}
 stderr: obligations failed
-command: sed -i "" -e "19s/ASSUME x' = 1/ASSUME x = 1/" ENABLEDrules_fingerprint_levels_test.tla
+command: sed -e "19s/ASSUME x' = 1/ASSUME x = 1/" ${FILE} > temp && mv temp ${FILE}

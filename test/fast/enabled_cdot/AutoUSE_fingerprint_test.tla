@@ -24,7 +24,7 @@ BY ExpandENABLED, AutoUSE
 ====================================
 command: ${TLAPM} --toolbox 0 0 ${FILE}
 stderr: All 3 obligations proved
-command: sed -i "" -e "18s/A == x' = 1/A == x' # x'/" AutoUSE_fingerprint_test.tla
+command: sed -e "18s/A == x' = 1/A == x' # x'/" ${FILE} > temp && mv temp ${FILE}
 command: ${TLAPM} --toolbox 0 0 ${FILE}
 stderr: obligations failed
-command: sed -i "" -e "18s/A == x' # x'/A == x' = 1/" AutoUSE_fingerprint_test.tla
+command: sed -e "18s/A == x' # x'/A == x' = 1/" ${FILE} > temp && mv temp ${FILE}
