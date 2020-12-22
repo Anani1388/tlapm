@@ -24,6 +24,7 @@ jobs:
       with:
         tag_name: ${{steps.date.outputs.date}}
         release_name: ${{steps.date.outputs.date}}
+        commitish: ${{ github.sha }}
         draft: false
         prerelease: true
     ## Remember the release URL and ID so the runners executing 'publish' below
