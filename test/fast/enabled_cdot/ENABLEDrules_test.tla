@@ -21,6 +21,10 @@ In more detail, from
 we deduce
     ENABLED A <=> ENABLED B
 The premise A <=> B needs to be provable where ENABLEDrules is invoked.
+
+The proof step where ENABLEDrules appears should not depend (directly or
+indirectly) on any assumption with level higher than constant or state level
+(except through only intermediate steps that have constant or state level).
 *)
 THEOREM
     ENABLED A <=> ENABLED B
@@ -35,6 +39,10 @@ In more detail, from
 we deduce
     ENABLED A => ENABLED B
 The premise A => B needs to be provable where ENABLEDrules is invoked.
+
+The proof step where ENABLEDrules appears should not depend (directly or
+indirectly) on any assumption with level higher than constant or state level
+(except through only intermediate steps that have constant or state level).
 *)
 THEOREM
     ENABLED C => ENABLED D
